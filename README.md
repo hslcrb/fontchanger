@@ -12,25 +12,20 @@ FontCraft는 안드로이드 폰의 서체(글꼴)를 원하는 폰트(TTF, OTF,
 
 ## ✨ 주요 기능 (Key Features)
 
-### 1. 🔤 모든 TTF / OTF / TTC 폰트 완벽 지원
-- 기기 내부 저장소의 모든 글꼴 파일을 즉시 불러와 내부 TrueType/OpenType `name` 테이블을 네이티브로 파싱합니다.
-- 패밀리 이름, 스타일(Weight), 가변 폰트(Variable Font) 여부, 버전 등의 메타데이터를 자동 추출합니다.
+### 1. ⚡ 루팅 / 추가 소프트웨어 완전 불필요 (100% Standalone)
+- Shizuku나 루팅(su), Magisk 등 외부 프로그램이 전혀 없어도 앱 자체만으로 완벽하게 동작합니다.
+- 커스텀 폰트 렌더링, 폰트 파일 패키징 및 내보내기, 백그라운드 GPS 타임라인 기록이 모두 기기 단독으로 완벽히 구동됩니다.
 
-### 2. 🎛️ 실시간 타이포그래피 커스텀 (Real-time Typography Customizer)
-- **크기 배율 (Font Size Scale)**: 0.8x ~ 1.4x 조절
-- **자간 (Letter Spacing)**: -0.05em ~ 0.20em 미세 튜닝
-- **행간 (Line Height)**: 1.0x ~ 2.0x 줄간격 조정
-- **굵기 (Target Weight)**: 100(Thin) ~ 900(Black)
-- **실시간 프리뷰**: 일반 문장, 영문/기호/숫자, 안드로이드 알림창/메시지 UI 모의 환경 실시간 렌더링.
+### 2. 🗺️ 구글 타임라인 완벽 대용 (Google Timeline Alternative GPK Engine)
+- **초절전 백그라운드 트래킹**: 시스템 자원(배터리/CPU) 소모를 극도로 억제한 적응형 위치 수신 알고리즘 (정지 시 대기, 유의미한 이동 감지 시에만 기록)
+- **매일 23시 59분 자동 GPK 보관**: 매일 밤 11시 59분에 그날의 하루 이동 경로를 `daily_YYYY-MM-DD.gpk` 파일로 자동 아카이빙하며, 기록은 1초의 끊김 없이 다음 날로 매끄럽게 이어집니다.
+- **앱 실행~종료 세션 전용 별도 분리 기록**: 앱 실행 시작부터 종료될 때까지의 이동 경로는 `session_YYYYMMDD_HHmmss.gpk`로 별도 격리 저장되어 이중 트랙 관리됩니다.
+- **내장 인터랙티브 벡터 맵**: 외부 유료 지도 API나 네트워크 없이도 순수 Compose Canvas 기반으로 실시간 이동 경로(Polyline), 체류 지점, 줌/팬 제스처, 거리/속도 통계를 제공합니다.
 
-### 3. 🚀 기기별 맞춤 적용 엔진 (Multi-Target Installation Engine)
-- **Magisk / KernelSU / APatch 모듈 생성 (가장 권장)**
-  - `/system/fonts` 및 `fonts.xml`을 systemless 방식으로 안전하게 오버레이하는 플래시용 ZIP 모듈을 원클릭으로 빌드합니다.
-  - 내장 Root Shell을 통한 즉시 플래시 및 소프트 리부트(kill zygote) 지원.
-- **Samsung One UI FlipFont (#mono_ / 테마 파크 연동)**
-  - 루팅되지 않은 삼성 갤럭시 기기에서도 사용자 폰트를 적용할 수 있도록 데이터 패키징 및 단계별 백업/복원 가이드를 제공합니다.
-- **Shizuku ADB 권한 연동**
-  - PC 연결 없이 무선 디버깅(Shizuku) 특권을 활용한 시스템 제어 지원.
+### 3. 🔤 모든 TTF / OTF / TTC 폰트 완벽 지원 & 실시간 타이포그래피 커스텀
+- 기기 내부의 모든 글꼴 파일을 즉시 파싱(Family, Style, 가변 폰트 여부 추출)
+- 글꼴 크기 배율, 자간, 행간, 굵기(100~900) 실시간 미세 조정 및 UI 실시간 프리뷰
+- 지원 기기 및 고급 사용자를 위한 Magisk/KernelSU 모듈 및 Samsung FlipFont 패키징 지원
 
 ### 4. 🛡️ 1-클릭 순정 원상복구 (One-Click Restore)
 - 적용된 폰트 모듈 삭제 및 시스템 폰트 렌더링 캐시 초기화 기능 내장으로 언제든 안전하게 순정 상태로 되돌릴 수 있습니다.

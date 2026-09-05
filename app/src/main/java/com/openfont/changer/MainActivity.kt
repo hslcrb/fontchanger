@@ -27,6 +27,7 @@ import java.io.FileOutputStream
 sealed class Screen(val route: String, val title: String, val icon: ImageVector) {
     object Home : Screen("home", "추천 폰트", Icons.Default.Home)
     object Custom : Screen("custom", "커스텀", Icons.Default.Edit)
+    object Timeline : Screen("timeline", "타임라인 지도", Icons.Default.Map)
     object Apply : Screen("apply", "적용 및 배포", Icons.Default.RocketLaunch)
     object Settings : Screen("settings", "설정", Icons.Default.Settings)
 }
@@ -86,7 +87,7 @@ fun MainAppContainer(
     var currentMetadata by remember { mutableStateOf(initialMeta) }
     var currentFontFile by remember { mutableStateOf(initialFile) }
 
-    val screens = listOf(Screen.Home, Screen.Custom, Screen.Apply, Screen.Settings)
+    val screens = listOf(Screen.Home, Screen.Custom, Screen.Timeline, Screen.Apply, Screen.Settings)
 
     Scaffold(
         topBar = {
@@ -134,6 +135,9 @@ fun MainAppContainer(
                 onNavigateToApply = {
                     selectedScreen = Screen.Apply
                 },
+                modifier = Modifier.padding(innerPadding)
+            )
+            Screen.Timeline -> com.openfont.changer.ui.screens.TimelineMapScreen(
                 modifier = Modifier.padding(innerPadding)
             )
             Screen.Apply -> ApplyMethodScreen(

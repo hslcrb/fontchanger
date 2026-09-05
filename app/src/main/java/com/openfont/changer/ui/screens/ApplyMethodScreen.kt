@@ -35,7 +35,7 @@ fun ApplyMethodScreen(
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
 
-    var selectedTarget by remember { mutableStateOf(ApplyTarget.MAGISK_MODULE) }
+    var selectedTarget by remember { mutableStateOf(ApplyTarget.STANDALONE_EXPORT) }
     var isProcessing by remember { mutableStateOf(false) }
     var resultMessage by remember { mutableStateOf<String?>(null) }
     var generatedZipFile by remember { mutableStateOf<File?>(null) }
@@ -77,7 +77,7 @@ fun ApplyMethodScreen(
 
         // 적용 방식 선택 라디오 리스트
         Text(
-            text = "기기 환경에 맞는 적용 방식 선택",
+            text = "적용 및 내보내기 방식 선택",
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.Bold
         )
@@ -161,6 +161,14 @@ fun ApplyMethodScreen(
                 isProcessing = true
                 coroutineScope.launch {
                     when (selectedTarget) {
+                        ApplyTarget.STANDALONE_EXPORT -> {
+                            val exportFolder = File(context.getExternalFilesDir(null), "ExportedFonts")
+                            exportFolder.mkdirs()
+                            val exportedFile = File(exportFolder, "${meta.familyName}_custom.ttf")
+                            file.copyTo(exportedFile, overwrite = true)
+                            isProcessing = false
+                            resultMessage = "루팅이나 추가 소프트웨어 없이 단독 폰트 파일이 생성되었습니다: ${exportedFile.name} (경로: ${exportedFile.absolutePath})"
+                        }
                         ApplyTarget.MAGISK_MODULE -> {
                             val outputZip = File(context.getExternalFilesDir(null), "FontCraft_${meta.familyName}_Magisk.zip")
                             val result = MagiskModuleGenerator.generateModule(
