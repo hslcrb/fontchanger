@@ -118,6 +118,73 @@ object GpkSerializer {
     }
 
     /**
+     * GPK 파일로부터 전체 LocationPoint 목록 파싱 (특정 일자 타임라인 재생용)
+     */
+    fun loadPointsFromGpkFile(file: File): List<LocationPoint> {
+        val points = mutableListOf<LocationPoint>()
+        if (!file.exists()) return points
+
+        try {
+            var currentLat = 0.0
+            var currentLon = 0.0
+            var currentEle = 0.0
+            var currentTime = 0L
+            var currentSpeed = 0f
+            var currentAccuracy = 0f
+            var inPoint = false
+
+            file.forEachLine { rawLine ->
+                val line = rawLine.trim()
+                if (line.startsWith("<trkpt")) {
+                    inPoint = true
+                    val latMatch = Regex("""lat="([^"]+)"""").find(line)
+                    val lonMatch = Regex("""lon="([^"]+)"""").find(line)
+                    currentLat = latMatch?.groupValues?.get(1)?.toDoubleOrNull() ?: 0.0
+                    currentLon = lonMatch?.groupValues?.get(1)?.toDoubleOrNull() ?: 0.0
+                } else if (line.startsWith("</trkpt>")) {
+                    if (inPoint && (currentLat != 0.0 || currentLon != 0.0)) {
+                        points.add(
+                            LocationPoint(
+                                latitude = currentLat,
+                                longitude = currentLon,
+                                altitude = currentEle,
+                                accuracy = currentAccuracy,
+                                speed = currentSpeed,
+                                timestamp = if (currentTime != 0L) currentTime else System.currentTimeMillis()
+                            )
+                        )
+                    }
+                    inPoint = false
+                } else if (inPoint) {
+                    when {
+                        line.startsWith("<ele>") -> {
+                            currentEle = line.removeSurrounding("<ele>", "</ele>").toDoubleOrNull() ?: 0.0
+                        }
+                        line.startsWith("<speed>") -> {
+                            currentSpeed = line.removeSurrounding("<speed>", "</speed>").toFloatOrNull() ?: 0f
+                        }
+                        line.startsWith("<accuracy>") -> {
+                            currentAccuracy = line.removeSurrounding("<accuracy>", "</accuracy>").toFloatOrNull() ?: 0f
+                        }
+                        line.startsWith("<time>") -> {
+                            val timeStr = line.removeSurrounding("<time>", "</time>")
+                            try {
+                                currentTime = isoFormat.parse(timeStr)?.time ?: 0L
+                            } catch (e: Exception) {
+                                currentTime = 0L
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+
+        return points
+    }
+
+    /**
      * XML 빠른 라인 카운팅을 통한 위치 포인트 개수 산출
      */
     private fun countPointsFast(file: File): Int {

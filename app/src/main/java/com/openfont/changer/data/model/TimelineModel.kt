@@ -53,3 +53,26 @@ data class GpkFileInfo(
     val isSession: Boolean,
     val sizeBytes: Long
 )
+
+/**
+ * 이미지 파일에서 추출한 EXIF 위치 및 시간 메타데이터
+ */
+data class TimelinePhoto(
+    val uriString: String,
+    val fileName: String,
+    val latitude: Double,
+    val longitude: Double,
+    val timestamp: Long,
+    val formattedTime: String
+)
+
+/**
+ * 특정 일자 / 특정 구간 타임라인 재생 설정
+ */
+data class TimelinePlaybackConfig(
+    val isPlaying: Boolean = false,
+    val currentIndex: Int = 0,
+    val speedMultiplier: Float = 1.0f,
+    val startIndex: Int = 0,
+    val endIndex: Int = 0
+)

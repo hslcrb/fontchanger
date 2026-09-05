@@ -71,5 +71,8 @@ dependencies {
     implementation(libs.shizuku.api)
     implementation(libs.shizuku.provider)
 
+    // EXIF Metadata Parser for Photos & Timeline
+    implementation("androidx.exifinterface:exifinterface:1.3.7")
+
     debugImplementation(libs.androidx.ui.tooling)
 }
