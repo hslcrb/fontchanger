@@ -74,5 +74,8 @@ dependencies {
     // EXIF Metadata Parser for Photos & Timeline
     implementation("androidx.exifinterface:exifinterface:1.3.7")
 
+    // OpenStreetMap Native Android Engine (osmdroid) - 구글 지도와 동일한 완벽한 지도 UX
+    implementation("org.osmdroid:osmdroid-android:6.1.18")
+
     debugImplementation(libs.androidx.ui.tooling)
 }

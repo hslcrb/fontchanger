@@ -382,36 +382,24 @@ fun TimelineMapScreen(
         }
 
         if (selectedTab == 0) {
-            // OpenStreetMap 캔버스
+            // 구글 지도급 네이티브 OpenStreetMap (osmdroid) 뷰어
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(1f)
                     .clip(RoundedCornerShape(16.dp))
-                    .background(Color(0xFFE2E8F0))
                     .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(16.dp))
             ) {
-                if (activePoints.isEmpty()) {
-                    Column(
-                        modifier = Modifier.align(Alignment.Center),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        Icon(Icons.Default.Map, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(48.dp))
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text("수집된 타임라인 경로가 없습니다.", style = MaterialTheme.typography.bodyMedium, color = Color(0xFF64748B))
-                    }
-                } else {
-                    OsmTimelineCanvas(
-                        points = filteredPoints,
-                        playbackPoint = if (playbackProgress > 0f && activePoints.isNotEmpty()) {
-                            val idx = (playbackProgress * (activePoints.size - 1)).toInt().coerceIn(0, activePoints.size - 1)
-                            activePoints[idx]
-                        } else null,
-                        photos = autoScannedPhotos,
-                        onPhotoClick = { selectedPhoto = it },
-                        modifier = Modifier.fillMaxSize()
-                    )
-                }
+                com.openfont.changer.ui.components.OsmDroidMapView(
+                    points = filteredPoints,
+                    playbackPoint = if (playbackProgress > 0f && activePoints.isNotEmpty()) {
+                        val idx = (playbackProgress * (activePoints.size - 1)).toInt().coerceIn(0, activePoints.size - 1)
+                        activePoints[idx]
+                    } else null,
+                    photos = autoScannedPhotos,
+                    onPhotoClick = { selectedPhoto = it },
+                    modifier = Modifier.fillMaxSize()
+                )
 
                 // 사진 터치 팝업
                 selectedPhoto?.let { photo ->
@@ -562,149 +550,4 @@ private fun shareFile(context: Context, file: File, mimeType: String) {
         addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
     }
     context.startActivity(Intent.createChooser(intent, "파일 내보내기"))
-}
-
-/**
- * OpenStreetMap 타일 다운로드 및 타임라인/사진 렌더러 캔버스
- */
-@Composable
-fun OsmTimelineCanvas(
-    points: List<LocationPoint>,
-    playbackPoint: LocationPoint?,
-    photos: List<TimelinePhoto>,
-    onPhotoClick: (TimelinePhoto) -> Unit,
-    modifier: Modifier = Modifier
-) {
-    val context = LocalContext.current
-    val coroutineScope = rememberCoroutineScope()
-
-    var scale by remember { mutableStateOf(1f) }
-    var panOffset by remember { mutableStateOf(Offset.Zero) }
-
-    val tileBitmaps = remember { mutableStateMapOf<String, Bitmap>() }
-
-    val minLat = remember(points) { points.minOfOrNull { it.latitude } ?: 37.5665 }
-    val maxLat = remember(points) { points.maxOfOrNull { it.latitude } ?: 37.5670 }
-    val minLon = remember(points) { points.minOfOrNull { it.longitude } ?: 126.9780 }
-    val maxLon = remember(points) { points.maxOfOrNull { it.longitude } ?: 126.9785 }
-
-    val centerLat = (minLat + maxLat) / 2.0
-    val centerLon = (minLon + maxLon) / 2.0
-    val zoom = 15
-
-    LaunchedEffect(centerLat, centerLon) {
-        val centerTileX = OsmTileManager.lonToTileX(centerLon, zoom)
-        val centerTileY = OsmTileManager.latToTileY(centerLat, zoom)
-
-        for (dx in -1..1) {
-            for (dy in -1..1) {
-                val tx = centerTileX + dx
-                val ty = centerTileY + dy
-                val key = "$zoom/$tx/$ty"
-                if (!tileBitmaps.containsKey(key)) {
-                    coroutineScope.launch {
-                        val bmp = OsmTileManager.getTile(context, zoom, tx, ty)
-                        if (bmp != null) tileBitmaps[key] = bmp
-                    }
-                }
-            }
-        }
-    }
-
-    Canvas(
-        modifier = modifier
-            .pointerInput(Unit) {
-                detectTransformGestures { _, pan, zoomFactor, _ ->
-                    scale = (scale * zoomFactor).coerceIn(0.5f, 6.0f)
-                    panOffset += pan
-                }
-            }
-    ) {
-        val latSpan = (maxLat - minLat).coerceAtLeast(0.001)
-        val lonSpan = (maxLon - minLon).coerceAtLeast(0.001)
-
-        val padding = 60f
-        val usableWidth = size.width - (padding * 2)
-        val usableHeight = size.height - (padding * 2)
-
-        fun toScreenCoord(lat: Double, lon: Double): Offset {
-            val x = padding + ((lon - minLon) / lonSpan * usableWidth).toFloat()
-            val y = padding + ((maxLat - lat) / latSpan * usableHeight).toFloat()
-            return (Offset(x, y) * scale) + panOffset
-        }
-
-        // 1. OpenStreetMap 타일 배경
-        val centerScr = toScreenCoord(centerLat, centerLon)
-        val centerTileX = OsmTileManager.lonToTileX(centerLon, zoom)
-        val centerTileY = OsmTileManager.latToTileY(centerLat, zoom)
-
-        for (dx in -1..1) {
-            for (dy in -1..1) {
-                val tx = centerTileX + dx
-                val ty = centerTileY + dy
-                val key = "$zoom/$tx/$ty"
-                tileBitmaps[key]?.let { bmp ->
-                    val tileSize = 256f * scale
-                    val tileX = centerScr.x + (dx * tileSize) - (tileSize / 2)
-                    val tileY = centerScr.y + (dy * tileSize) - (tileSize / 2)
-                    drawImage(
-                        image = bmp.asImageBitmap(),
-                        dstOffset = IntOffset(tileX.toInt(), tileY.toInt()),
-                        dstSize = IntSize(tileSize.toInt(), tileSize.toInt())
-                    )
-                }
-            }
-        }
-
-        // 2. 이동 경로 폴리라인
-        if (points.size >= 2) {
-            val path = Path()
-            val firstScreen = toScreenCoord(points.first().latitude, points.first().longitude)
-            path.moveTo(firstScreen.x, firstScreen.y)
-
-            for (i in 1 until points.size) {
-                val scr = toScreenCoord(points[i].latitude, points[i].longitude)
-                path.lineTo(scr.x, scr.y)
-            }
-
-            drawPath(
-                path = path,
-                color = Color.White.copy(alpha = 0.8f),
-                style = Stroke(width = 10f)
-            )
-            drawPath(
-                path = path,
-                color = Color(0xFF4F46E5),
-                style = Stroke(width = 6f)
-            )
-        }
-
-        // 3. 출발점 마커 (초록)
-        if (points.isNotEmpty()) {
-            val startScr = toScreenCoord(points.first().latitude, points.first().longitude)
-            drawCircle(color = Color.White, radius = 12f, center = startScr)
-            drawCircle(color = Color(0xFF10B981), radius = 9f, center = startScr)
-
-            // 4. 도착점 마커 (주황)
-            val endScr = toScreenCoord(points.last().latitude, points.last().longitude)
-            drawCircle(color = Color.White, radius = 12f, center = endScr)
-            drawCircle(color = Color(0xFFF59E0B), radius = 9f, center = endScr)
-        }
-
-        // 5. 사진 EXIF 마커 (보라색 카메라 핀)
-        for (photo in photos) {
-            val pScr = toScreenCoord(photo.latitude, photo.longitude)
-            drawCircle(color = Color.White, radius = 14f, center = pScr)
-            drawCircle(color = Color(0xFF8B5CF6), radius = 11f, center = pScr)
-            drawCircle(color = Color.White, radius = 4f, center = pScr)
-        }
-
-        // 6. 타임랩스 재생 현재 위치 마커
-        playbackPoint?.let { pb ->
-            val pbScr = toScreenCoord(pb.latitude, pb.longitude)
-            drawCircle(color = Color(0xFFF43F5E).copy(alpha = 0.35f), radius = 24f, center = pbScr)
-            drawCircle(color = Color.White, radius = 14f, center = pbScr)
-            drawCircle(color = Color(0xFFF43F5E), radius = 10f, center = pbScr)
-        }
-    }
 }

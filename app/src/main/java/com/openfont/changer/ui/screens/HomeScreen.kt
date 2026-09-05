@@ -34,15 +34,8 @@ fun HomeScreen(
     val presetFonts = remember { repository.getPopularPresetFonts() }
     val coroutineScope = rememberCoroutineScope()
 
-    var isRooted by remember { mutableStateOf(false) }
-    var isShizukuAvailable by remember { mutableStateOf(false) }
+    // 100% 단독 실행 모드
 
-    LaunchedEffect(Unit) {
-        coroutineScope.launch {
-            isRooted = RootShellExecutor.isRootAvailable()
-            isShizukuAvailable = FontCraftApp.isShizukuAvailable()
-        }
-    }
 
     LazyColumn(
         modifier = modifier
@@ -80,7 +73,7 @@ fun HomeScreen(
         }
 
         item {
-            // 시스템 환경 진단 카드
+            // 시스템 단독 실행 상태 카드 (루트 및 Shizuku 완전 불필요)
             Card(
                 colors = CardDefaults.cardColors(
                     containerColor = MaterialTheme.colorScheme.surfaceVariant
@@ -89,44 +82,26 @@ fun HomeScreen(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.CheckCircle,
+                            contentDescription = null,
+                            tint = Color(0xFF10B981),
+                            modifier = Modifier.size(24.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "단독 실행 모드 활성화됨",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        text = "시스템 환경 진단",
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold
+                        text = "Shizuku나 루팅 등 어떤 외부 프로그램도 필요 없습니다. 폰트 커스텀 렌더링, 인앱 지도, 백그라운드 GPK 타임라인이 앱 자체만으로 완벽하게 동작합니다.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Icon(
-                            imageVector = if (isRooted) Icons.Default.CheckCircle else Icons.Default.Warning,
-                            contentDescription = null,
-                            tint = if (isRooted) Color(0xFF10B981) else Color(0xFFF59E0B)
-                        )
-                        Text(
-                            text = if (isRooted) "Root (Magisk / KSU) 활성화됨" else "Root 권한 없음 (삼성 One UI 또는 Shizuku 모드 권장)",
-                            style = MaterialTheme.typography.bodyMedium
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.height(6.dp))
-
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Icon(
-                            imageVector = if (isShizukuAvailable) Icons.Default.CheckCircle else Icons.Default.Warning,
-                            contentDescription = null,
-                            tint = if (isShizukuAvailable) Color(0xFF10B981) else Color(0xFF94A3B8)
-                        )
-                        Text(
-                            text = if (isShizukuAvailable) "Shizuku 바인더 연동됨" else "Shizuku 비활성화",
-                            style = MaterialTheme.typography.bodyMedium
-                        )
-                    }
                 }
             }
         }
