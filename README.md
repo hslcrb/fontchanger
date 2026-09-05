@@ -1,12 +1,15 @@
-# FontCraft (폰트크래프트) 🎨
-> **안드로이드 시스템 글꼴을 완전히 자유자재로 커스텀하고 교체하는 오픈소스 시스템 폰트 체인저**
+<p align="center">
+  <img src="art/logo_full.svg" alt="FontCraft Logo" width="100%" />
+</p>
+
+> **안드로이드 시스템 글꼴 자유 커스텀 & 구글 타임라인 완벽 대용 오프라인 GPK/KML 위치 트래커**
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![Android](https://img.shields.io/badge/Platform-Android%208.0%2B-green.svg)](https://android.com)
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.0.0-purple.svg)](https://kotlinlang.org)
 [![Compose](https://img.shields.io/badge/Jetpack%20Compose-BOM%202024.06-brightgreen.svg)](https://developer.android.com/jetpack/compose)
 
-FontCraft는 안드로이드 폰의 서체(글꼴)를 원하는 폰트(TTF, OTF, TTC)로 자유자재로 변경하고, 글꼴 크기·자간·행간·굵기를 실시간으로 미세 조정한 뒤 기기 환경에 맞춰 안전하게 적용할 수 있는 강력한 안드로이드 오픈소스 앱입니다.
+FontCraft는 안드로이드 폰의 서체(글꼴)를 원하는 폰트(TTF, OTF, TTC)로 자유자재로 변경하고, 시스템 자원(배터리/CPU)을 거의 소모하지 않으면서 백그라운드에서 매일 23:59 자동 GPK 보관, 앱 세션 분리 로깅, 갤러리 사진의 EXIF GPS 메타 자동 병렬 색인화, OpenStreetMap 타일 지도 렌더링 및 KML/GeoJSON 내보내기를 완벽 지원하는 차세대 올인원 오픈소스 도구입니다.
 
 ---
 

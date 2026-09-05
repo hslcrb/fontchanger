@@ -53,17 +53,29 @@ fun HomeScreen(
     ) {
         item {
             // 헤더 배너
-            Column(modifier = Modifier.padding(vertical = 8.dp)) {
-                Text(
-                    text = "FontCraft",
-                    style = MaterialTheme.typography.headlineLarge,
-                    color = MaterialTheme.colorScheme.primary
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(vertical = 8.dp)
+            ) {
+                Icon(
+                    painter = androidx.compose.ui.res.painterResource(id = com.openfont.changer.R.drawable.ic_logo_symbol),
+                    contentDescription = "Logo",
+                    tint = Color.Unspecified,
+                    modifier = Modifier.size(48.dp)
                 )
-                Text(
-                    text = "안드로이드 시스템 폰트 커스텀 & 변환 엔진",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                Spacer(modifier = Modifier.width(12.dp))
+                Column {
+                    Text(
+                        text = "FontCraft",
+                        style = MaterialTheme.typography.headlineLarge,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Text(
+                        text = "안드로이드 시스템 폰트 커스텀 & 구글 타임라인 GPK 엔진",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
         }
 

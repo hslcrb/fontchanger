@@ -33,23 +33,21 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
+import com.openfont.changer.R
 import com.openfont.changer.data.model.GpkFileInfo
 import com.openfont.changer.data.model.LocationPoint
 import com.openfont.changer.data.model.TimelinePhoto
-import com.openfont.changer.engine.GpkSerializer
-import com.openfont.changer.engine.OsmTileManager
-import com.openfont.changer.engine.PhotoExifParser
-import com.openfont.changer.engine.TimelineTrackingService
+import com.openfont.changer.engine.*
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.io.File
-import kotlin.math.*
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -62,12 +60,19 @@ fun TimelineMapScreen(
     val isTracking by TimelineTrackingService.isTracking.collectAsState()
     val currentLocation by TimelineTrackingService.currentLocation.collectAsState()
     val liveTodayPoints by TimelineTrackingService.todayPoints.collectAsState()
+    val autoScannedPhotos by BackgroundPhotoScanner.scannedPhotos.collectAsState()
 
     var gpkFiles by remember { mutableStateOf<List<GpkFileInfo>>(emptyList()) }
     var selectedFile by remember { mutableStateOf<GpkFileInfo?>(null) } // null = 오늘 실시간
     var activePoints by remember { mutableStateOf<List<LocationPoint>>(emptyList()) }
-    var photoMarkers by remember { mutableStateOf<List<TimelinePhoto>>(emptyList()) }
     var selectedPhoto by remember { mutableStateOf<TimelinePhoto?>(null) }
+
+    // 지도 다운로드 상태
+    var isDownloadingMap by remember { mutableStateOf(false) }
+    var mapDownloadProgress by remember { mutableStateOf("") }
+
+    // 다중 포맷 내보내기 모달 다이얼로그
+    var exportTargetFile by remember { mutableStateOf<GpkFileInfo?>(null) }
 
     // 구간 필터링 및 재생 상태
     var rangeStartRatio by remember { mutableStateOf(0f) }
@@ -78,25 +83,19 @@ fun TimelineMapScreen(
 
     var selectedTab by remember { mutableStateOf(0) } // 0: OpenStreetMap 지도, 1: 파일 보관함
 
-    // 사진 다중 선택 런처 (EXIF 메타 파싱)
-    val photoPickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetMultipleContents()
-    ) { uris: List<Uri> ->
-        if (uris.isNotEmpty()) {
-            coroutineScope.launch {
-                val parsed = mutableListOf<TimelinePhoto>()
-                for (u in uris) {
-                    val p = PhotoExifParser.parsePhotoExif(context, u)
-                    if (p != null) parsed.add(p)
-                }
-                photoMarkers = photoMarkers + parsed
-                Toast.makeText(context, "${parsed.size}장의 사진에서 GPS EXIF 메타를 불러왔습니다.", Toast.LENGTH_SHORT).show()
-            }
+    // 사진 미디어 권한 런처 (백그라운드 자동 병렬 스캔 권한)
+    val mediaPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions()
+    ) { perms ->
+        val granted = perms.values.any { it }
+        if (granted) {
+            BackgroundPhotoScanner.startAutoScanning(context)
+            Toast.makeText(context, "백그라운드 사진 EXIF 자동 스캔이 활성화되었습니다.", Toast.LENGTH_SHORT).show()
         }
     }
 
     // 위치 권한 런처
-    val permissionLauncher = rememberLauncherForActivityResult(
+    val locationPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions()
     ) { perms ->
         val fineGranted = perms[Manifest.permission.ACCESS_FINE_LOCATION] == true
@@ -109,8 +108,6 @@ fun TimelineMapScreen(
             } else {
                 context.startService(intent)
             }
-        } else {
-            Toast.makeText(context, "위치 권한이 필요합니다.", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -121,6 +118,8 @@ fun TimelineMapScreen(
 
     LaunchedEffect(Unit) {
         refreshFileList()
+        // 자동 사진 스캔 시작 시도
+        BackgroundPhotoScanner.startAutoScanning(context)
     }
 
     // 표시할 포인트 결정
@@ -165,13 +164,13 @@ fun TimelineMapScreen(
     Column(
         modifier = modifier
             .fillMaxSize()
-            .padding(horizontal = 12.dp, vertical = 8.dp),
+            .padding(horizontal = 12.dp, vertical = 6.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        // 상단 제어 바: 실시간 트래커 토글 + 특정 일자 선택 드롭다운
+        // 상단 헤더: 프리미엄 SVG 로고 심볼 & 상태 바
         Card(
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-            shape = RoundedCornerShape(14.dp),
+            shape = RoundedCornerShape(16.dp),
             modifier = Modifier.fillMaxWidth()
         ) {
             Column(modifier = Modifier.padding(12.dp)) {
@@ -180,81 +179,121 @@ fun TimelineMapScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Column {
-                        Text(
-                            text = "구글 타임라인 OpenStreetMap",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            painter = painterResource(id = R.drawable.ic_logo_symbol),
+                            contentDescription = "FontCraft Logo",
+                            tint = Color.Unspecified,
+                            modifier = Modifier.size(38.dp)
                         )
-                        Text(
-                            text = if (selectedFile == null) {
-                                if (isTracking) "오늘 실시간 수집 중 (${activePoints.size}pt)" else "오늘 실시간 기록 (정지됨)"
-                            } else {
-                                "선택된 과거 기록: ${selectedFile!!.name} (${activePoints.size}pt)"
-                            },
-                            style = MaterialTheme.typography.bodySmall,
-                            color = if (isTracking && selectedFile == null) Color(0xFF10B981) else MaterialTheme.colorScheme.primary
-                        )
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Column {
+                            Text(
+                                text = "FontCraft Timeline",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = if (selectedFile == null) {
+                                    if (isTracking) "초절전 기록 중 (${activePoints.size}pt, 사진 ${autoScannedPhotos.size}장)" else "실시간 기록 중지됨"
+                                } else {
+                                    "${selectedFile!!.name} (${activePoints.size}pt)"
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = if (isTracking && selectedFile == null) Color(0xFF10B981) else MaterialTheme.colorScheme.primary
+                            )
+                        }
                     }
 
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Switch(
-                            checked = isTracking,
-                            onCheckedChange = { start ->
-                                if (start) {
-                                    val permissions = mutableListOf(
-                                        Manifest.permission.ACCESS_FINE_LOCATION,
-                                        Manifest.permission.ACCESS_COARSE_LOCATION
-                                    )
-                                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                                        permissions.add(Manifest.permission.POST_NOTIFICATIONS)
-                                    }
-                                    permissionLauncher.launch(permissions.toTypedArray())
-                                } else {
-                                    val intent = Intent(context, TimelineTrackingService::class.java).apply {
-                                        action = TimelineTrackingService.ACTION_STOP
-                                    }
-                                    context.startService(intent)
-                                    refreshFileList()
+                    Switch(
+                        checked = isTracking,
+                        onCheckedChange = { start ->
+                            if (start) {
+                                val permissions = mutableListOf(
+                                    Manifest.permission.ACCESS_FINE_LOCATION,
+                                    Manifest.permission.ACCESS_COARSE_LOCATION
+                                )
+                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                                    permissions.add(Manifest.permission.POST_NOTIFICATIONS)
                                 }
+                                locationPermissionLauncher.launch(permissions.toTypedArray())
+                            } else {
+                                val intent = Intent(context, TimelineTrackingService::class.java).apply {
+                                    action = TimelineTrackingService.ACTION_STOP
+                                }
+                                context.startService(intent)
+                                refreshFileList()
                             }
-                        )
-                    }
+                        }
+                    )
                 }
 
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(10.dp))
 
-                // 특정 일자/세션 선택 버튼 및 사진 EXIF 불러오기 버튼
+                // 빠른 액션 버튼 행: 날짜 선택, 사진 자동 스캔 권한, 오프라인 지도 다운로드
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     OutlinedButton(
                         onClick = { selectedTab = 1 },
                         shape = RoundedCornerShape(10.dp),
                         modifier = Modifier.weight(1f),
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
+                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp)
                     ) {
-                        Icon(Icons.Default.DateRange, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Icon(Icons.Default.DateRange, contentDescription = null, modifier = Modifier.size(15.dp))
                         Spacer(modifier = Modifier.width(4.dp))
-                        Text(if (selectedFile == null) "일자/세션 선택" else selectedFile!!.name.take(12) + "..", fontSize = 12.sp)
+                        Text(if (selectedFile == null) "일자 선택" else "과거 기록", fontSize = 11.sp)
                     }
 
                     FilledTonalButton(
-                        onClick = { photoPickerLauncher.launch("image/*") },
+                        onClick = {
+                            val perms = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                                arrayOf(Manifest.permission.READ_MEDIA_IMAGES)
+                            } else {
+                                arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE)
+                            }
+                            mediaPermissionLauncher.launch(perms)
+                        },
                         shape = RoundedCornerShape(10.dp),
-                        modifier = Modifier.weight(1f),
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
+                        modifier = Modifier.weight(1.3f),
+                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp)
                     ) {
-                        Icon(Icons.Default.AddPhotoAlternate, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Icon(Icons.Default.PhotoCamera, contentDescription = null, modifier = Modifier.size(15.dp))
                         Spacer(modifier = Modifier.width(4.dp))
-                        Text("사진 EXIF 추가 (${photoMarkers.size})", fontSize = 12.sp)
+                        Text("사진 자동스캔 (${autoScannedPhotos.size})", fontSize = 11.sp)
+                    }
+
+                    Button(
+                        onClick = {
+                            if (activePoints.isEmpty()) {
+                                Toast.makeText(context, "다운로드할 위치 경로가 없습니다.", Toast.LENGTH_SHORT).show()
+                                return@Button
+                            }
+                            isDownloadingMap = true
+                            coroutineScope.launch {
+                                OfflineMapDownloader.downloadTilesForTrack(context, activePoints) { progress ->
+                                    mapDownloadProgress = "${progress.downloadedTiles}/${progress.totalTiles}"
+                                    if (progress.isFinished) {
+                                        isDownloadingMap = false
+                                        Toast.makeText(context, "오프라인 지도 팩 다운로드 완료!", Toast.LENGTH_SHORT).show()
+                                    }
+                                }
+                            }
+                        },
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier.weight(1.1f),
+                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp)
+                    ) {
+                        Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(15.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(if (isDownloadingMap) mapDownloadProgress else "지도 저장", fontSize = 11.sp)
                     }
 
                     if (selectedFile != null) {
                         IconButton(
                             onClick = { selectedFile = null },
-                            modifier = Modifier.size(36.dp)
+                            modifier = Modifier.size(34.dp)
                         ) {
                             Icon(Icons.Default.Refresh, contentDescription = "오늘로 복귀", tint = MaterialTheme.colorScheme.primary)
                         }
@@ -263,14 +302,14 @@ fun TimelineMapScreen(
             }
         }
 
-        // 재생 컨트롤러 & 특정 구간 필터 슬라이더
+        // 재생 컨트롤러 및 구간 필터
         if (activePoints.isNotEmpty()) {
             Card(
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)),
                 shape = RoundedCornerShape(12.dp),
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Column(modifier = Modifier.padding(10.dp)) {
+                Column(modifier = Modifier.padding(8.dp)) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -280,23 +319,22 @@ fun TimelineMapScreen(
                             FilledIconButton(
                                 onClick = { isPlaying = !isPlaying },
                                 shape = CircleShape,
-                                modifier = Modifier.size(36.dp)
+                                modifier = Modifier.size(34.dp)
                             ) {
                                 Icon(
                                     imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                                    contentDescription = "재생/정지",
-                                    modifier = Modifier.size(20.dp)
+                                    contentDescription = "재생",
+                                    modifier = Modifier.size(18.dp)
                                 )
                             }
-                            Spacer(modifier = Modifier.width(8.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
                             Text(
                                 text = "타임랩스 재생",
-                                style = MaterialTheme.typography.labelLarge,
+                                style = MaterialTheme.typography.labelMedium,
                                 fontWeight = FontWeight.SemiBold
                             )
                         }
 
-                        // 속도 배율 토글 (1x -> 2x -> 5x -> 10x)
                         SuggestionChip(
                             onClick = {
                                 playbackSpeed = when (playbackSpeed) {
@@ -306,11 +344,10 @@ fun TimelineMapScreen(
                                     else -> 1.0f
                                 }
                             },
-                            label = { Text("${playbackSpeed.toInt()}x 속도", fontSize = 11.sp) }
+                            label = { Text("${playbackSpeed.toInt()}x 속도", fontSize = 10.sp) }
                         )
                     }
 
-                    // 재생 진행도 슬라이더
                     Slider(
                         value = playbackProgress,
                         onValueChange = {
@@ -318,37 +355,34 @@ fun TimelineMapScreen(
                             isPlaying = false
                         },
                         valueRange = 0f..1f,
-                        modifier = Modifier.height(28.dp)
+                        modifier = Modifier.height(26.dp)
                     )
 
-                    // 구간 설정 (시작% ~ 종료%)
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Text(
-                            text = "구간 필터: ${(rangeStartRatio * 100).toInt()}% ~ ${(rangeEndRatio * 100).toInt()}% (${filteredPoints.size}pt)",
+                            text = "구간 필터: ${(rangeStartRatio * 100).toInt()}% ~ ${(rangeEndRatio * 100).toInt()}% (${filteredPoints.size}개 지점)",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
-                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Text(
-                                text = "전체",
-                                fontSize = 11.sp,
-                                color = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.clickable {
-                                    rangeStartRatio = 0f
-                                    rangeEndRatio = 1f
-                                }
-                            )
-                        }
+                        Text(
+                            text = "전체 구간",
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.clickable {
+                                rangeStartRatio = 0f
+                                rangeEndRatio = 1f
+                            }
+                        )
                     }
                 }
             }
         }
 
         if (selectedTab == 0) {
-            // OpenStreetMap 타일 배경 인터랙티브 맵 캔버스
+            // OpenStreetMap 캔버스
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -364,7 +398,7 @@ fun TimelineMapScreen(
                     ) {
                         Icon(Icons.Default.Map, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(48.dp))
                         Spacer(modifier = Modifier.height(8.dp))
-                        Text("기록된 타임라인 경로가 없습니다.", style = MaterialTheme.typography.bodyMedium, color = Color(0xFF64748B))
+                        Text("수집된 타임라인 경로가 없습니다.", style = MaterialTheme.typography.bodyMedium, color = Color(0xFF64748B))
                     }
                 } else {
                     OsmTimelineCanvas(
@@ -373,32 +407,31 @@ fun TimelineMapScreen(
                             val idx = (playbackProgress * (activePoints.size - 1)).toInt().coerceIn(0, activePoints.size - 1)
                             activePoints[idx]
                         } else null,
-                        photos = photoMarkers,
+                        photos = autoScannedPhotos,
                         onPhotoClick = { selectedPhoto = it },
                         modifier = Modifier.fillMaxSize()
                     )
                 }
 
-                // 사진 클릭 시 EXIF 상세 팝업
+                // 사진 터치 팝업
                 selectedPhoto?.let { photo ->
                     Card(
                         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                         shape = RoundedCornerShape(12.dp),
                         modifier = Modifier
                             .align(Alignment.BottomCenter)
-                            .padding(12.dp)
+                            .padding(10.dp)
                             .fillMaxWidth()
                     ) {
                         Row(
-                            modifier = Modifier.padding(12.dp),
+                            modifier = Modifier.padding(10.dp),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
                             Column(modifier = Modifier.weight(1f)) {
-                                Text(text = "📸 사진 위치 (EXIF)", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                                Text(text = photo.fileName, fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
-                                Text(text = "촬영일시: ${photo.formattedTime}", fontSize = 11.sp, color = Color.Gray)
-                                Text(text = "GPS: ${String.format("%.5f, %.5f", photo.latitude, photo.longitude)}", fontSize = 11.sp, color = Color.Gray)
+                                Text(text = "📸 자동 색인된 사진 (EXIF)", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                Text(text = photo.fileName, fontSize = 11.sp, color = MaterialTheme.colorScheme.primary)
+                                Text(text = "촬영일시: ${photo.formattedTime}", fontSize = 10.sp, color = Color.Gray)
                             }
                             IconButton(onClick = { selectedPhoto = null }) {
                                 Icon(Icons.Default.Close, contentDescription = "닫기")
@@ -408,14 +441,14 @@ fun TimelineMapScreen(
                 }
             }
         } else {
-            // GPK 파일 보관함
+            // GPK 파일 보관함 및 KML/GPX/GeoJSON 다중 포맷 내보내기
             Column(modifier = Modifier.fillMaxSize()) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(text = "저장된 타임라인 목록 (${gpkFiles.size})", fontWeight = FontWeight.Bold)
+                    Text(text = "저장된 기록 목록 (${gpkFiles.size})", fontWeight = FontWeight.Bold)
                     TextButton(onClick = { selectedTab = 0 }) {
                         Text("지도로 돌아가기")
                     }
@@ -439,25 +472,21 @@ fun TimelineMapScreen(
                                 }
                         ) {
                             Row(
-                                modifier = Modifier.padding(14.dp),
+                                modifier = Modifier.padding(12.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
                                 Column(modifier = Modifier.weight(1f)) {
-                                    Text(text = gpk.name, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                                    Text(text = "${gpk.formattedDate} · ${gpk.pointCount} 포인트 · ${gpk.sizeBytes / 1024} KB", fontSize = 12.sp, color = Color.Gray)
+                                    Text(text = gpk.name, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                    Text(text = "${gpk.formattedDate} · ${gpk.pointCount} 포인트 · ${gpk.sizeBytes / 1024} KB", fontSize = 11.sp, color = Color.Gray)
                                 }
                                 Row {
-                                    IconButton(onClick = {
-                                        val uri = FileProvider.getUriForFile(context, "${context.packageName}.provider", gpk.file)
-                                        val intent = Intent(Intent.ACTION_SEND).apply {
-                                            type = "application/octet-stream"
-                                            putExtra(Intent.EXTRA_STREAM, uri)
-                                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                                        }
-                                        context.startActivity(Intent.createChooser(intent, "GPK 타임라인 파일 내보내기"))
-                                    }) {
-                                        Icon(Icons.Default.Share, contentDescription = "공유")
+                                    FilledTonalButton(
+                                        onClick = { exportTargetFile = gpk },
+                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                        shape = RoundedCornerShape(8.dp)
+                                    ) {
+                                        Text("KML/내보내기", fontSize = 11.sp)
                                     }
                                 }
                             }
@@ -467,6 +496,72 @@ fun TimelineMapScreen(
             }
         }
     }
+
+    // KML / GPX / GeoJSON 다중 포맷 변환 다이얼로그
+    exportTargetFile?.let { gpk ->
+        AlertDialog(
+            onDismissRequest = { exportTargetFile = null },
+            title = { Text("다중 지도 포맷으로 내보내기") },
+            text = { Text("선택한 기록 (${gpk.name})을 어떤 포맷으로 내보내시겠습니까?") },
+            confirmButton = {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Button(
+                        onClick = {
+                            val pts = GpkSerializer.loadPointsFromGpkFile(gpk.file)
+                            val kmlFile = File(context.cacheDir, "${gpk.file.nameWithoutExtension}.kml")
+                            MultiFormatExporter.exportToKml(kmlFile, gpk.name, pts, autoScannedPhotos)
+                            shareFile(context, kmlFile, "application/vnd.google-earth.kml+xml")
+                            exportTargetFile = null
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("KML 포맷 (Google Earth / 타임라인 완벽 호환)")
+                    }
+
+                    Button(
+                        onClick = {
+                            val pts = GpkSerializer.loadPointsFromGpkFile(gpk.file)
+                            val geoJsonFile = File(context.cacheDir, "${gpk.file.nameWithoutExtension}.geojson")
+                            MultiFormatExporter.exportToGeoJson(geoJsonFile, gpk.name, pts, autoScannedPhotos)
+                            shareFile(context, geoJsonFile, "application/geo+json")
+                            exportTargetFile = null
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("GeoJSON 포맷 (웹 지도 및 GIS)")
+                    }
+
+                    OutlinedButton(
+                        onClick = {
+                            shareFile(context, gpk.file, "application/octet-stream")
+                            exportTargetFile = null
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("원본 GPK / GPX 파일 공유")
+                    }
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { exportTargetFile = null }) {
+                    Text("취소")
+                }
+            }
+        )
+    }
+}
+
+private fun shareFile(context: Context, file: File, mimeType: String) {
+    val uri = FileProvider.getUriForFile(context, "${context.packageName}.provider", file)
+    val intent = Intent(Intent.ACTION_SEND).apply {
+        type = mimeType
+        putExtra(Intent.EXTRA_STREAM, uri)
+        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    }
+    context.startActivity(Intent.createChooser(intent, "파일 내보내기"))
 }
 
 /**
@@ -486,7 +581,6 @@ fun OsmTimelineCanvas(
     var scale by remember { mutableStateOf(1f) }
     var panOffset by remember { mutableStateOf(Offset.Zero) }
 
-    // OSM 타일 캐시 상태
     val tileBitmaps = remember { mutableStateMapOf<String, Bitmap>() }
 
     val minLat = remember(points) { points.minOfOrNull { it.latitude } ?: 37.5665 }
@@ -496,14 +590,12 @@ fun OsmTimelineCanvas(
 
     val centerLat = (minLat + maxLat) / 2.0
     val centerLon = (minLon + maxLon) / 2.0
-    val zoom = 15 // 중간 줌 레벨
+    val zoom = 15
 
-    // 중앙 타일 다운로드
     LaunchedEffect(centerLat, centerLon) {
         val centerTileX = OsmTileManager.lonToTileX(centerLon, zoom)
         val centerTileY = OsmTileManager.latToTileY(centerLat, zoom)
 
-        // 주변 3x3 타일 로드
         for (dx in -1..1) {
             for (dy in -1..1) {
                 val tx = centerTileX + dx
@@ -541,7 +633,7 @@ fun OsmTimelineCanvas(
             return (Offset(x, y) * scale) + panOffset
         }
 
-        // 1. OpenStreetMap 타일 배경 그리기
+        // 1. OpenStreetMap 타일 배경
         val centerScr = toScreenCoord(centerLat, centerLon)
         val centerTileX = OsmTileManager.lonToTileX(centerLon, zoom)
         val centerTileY = OsmTileManager.latToTileY(centerLat, zoom)
@@ -564,7 +656,7 @@ fun OsmTimelineCanvas(
             }
         }
 
-        // 2. 타임라인 이동 경로 폴리라인 (선명한 인디고 블루 & 외곽선)
+        // 2. 이동 경로 폴리라인
         if (points.size >= 2) {
             val path = Path()
             val firstScreen = toScreenCoord(points.first().latitude, points.first().longitude)
@@ -575,13 +667,11 @@ fun OsmTimelineCanvas(
                 path.lineTo(scr.x, scr.y)
             }
 
-            // 그림자 외곽선
             drawPath(
                 path = path,
                 color = Color.White.copy(alpha = 0.8f),
                 style = Stroke(width = 10f)
             )
-            // 메인 트랙
             drawPath(
                 path = path,
                 color = Color(0xFF4F46E5),
@@ -590,14 +680,16 @@ fun OsmTimelineCanvas(
         }
 
         // 3. 출발점 마커 (초록)
-        val startScr = toScreenCoord(points.first().latitude, points.first().longitude)
-        drawCircle(color = Color.White, radius = 12f, center = startScr)
-        drawCircle(color = Color(0xFF10B981), radius = 9f, center = startScr)
+        if (points.isNotEmpty()) {
+            val startScr = toScreenCoord(points.first().latitude, points.first().longitude)
+            drawCircle(color = Color.White, radius = 12f, center = startScr)
+            drawCircle(color = Color(0xFF10B981), radius = 9f, center = startScr)
 
-        // 4. 도착점 마커 (주황)
-        val endScr = toScreenCoord(points.last().latitude, points.last().longitude)
-        drawCircle(color = Color.White, radius = 12f, center = endScr)
-        drawCircle(color = Color(0xFFF59E0B), radius = 9f, center = endScr)
+            // 4. 도착점 마커 (주황)
+            val endScr = toScreenCoord(points.last().latitude, points.last().longitude)
+            drawCircle(color = Color.White, radius = 12f, center = endScr)
+            drawCircle(color = Color(0xFFF59E0B), radius = 9f, center = endScr)
+        }
 
         // 5. 사진 EXIF 마커 (보라색 카메라 핀)
         for (photo in photos) {
@@ -607,7 +699,7 @@ fun OsmTimelineCanvas(
             drawCircle(color = Color.White, radius = 4f, center = pScr)
         }
 
-        // 6. 타임랩스 재생 현재 위치 마커 (붉은색 펄스 링)
+        // 6. 타임랩스 재생 현재 위치 마커
         playbackPoint?.let { pb ->
             val pbScr = toScreenCoord(pb.latitude, pb.longitude)
             drawCircle(color = Color(0xFFF43F5E).copy(alpha = 0.35f), radius = 24f, center = pbScr)
