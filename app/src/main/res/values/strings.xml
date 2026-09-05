@@ -1,0 +1,8 @@
+<resources>
+    <string name="app_name">FontCraft</string>
+    <string name="app_description">안드로이드 시스템 커스텀 폰트 체인저</string>
+    <string name="tab_presets">추천 폰트</string>
+    <string name="tab_custom">커스텀 폰트</string>
+    <string name="tab_installer">적용 및 배포</string>
+    <string name="tab_settings">설정 및 백업</string>
+</resources>
